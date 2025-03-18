@@ -9,3 +9,7 @@
 ```bash
 uv sync
 ```
+
+## Usage
+
+Open the `notebook.ipynb` file in the src directory.
