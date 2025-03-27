@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class Activation:
     def forward(self, x):
         """Menerapkan fungsi aktivasi pada input."""
@@ -45,9 +46,32 @@ class Tanh(Activation):
 
 class Softmax(Activation):
     def forward(self, x):
-        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        shifted_x = x - np.max(x, axis=1, keepdims=True)
+        exp_x = np.exp(shifted_x)
         return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
     def backward(self, x):
-        s = self.forward(x)
-        return s * (1 - s)
+        return np.ones_like(x)
+
+
+class Swish(Activation):
+    def forward(self, x):
+        return x * (1 / (1 + np.exp(-x)))
+
+    def backward(self, x):
+        sigmoid_x = 1 / (1 + np.exp(-x))
+        return sigmoid_x + x * sigmoid_x * (1 - sigmoid_x)
+
+
+class GELU(Activation):
+    def forward(self, x):
+        return (
+            0.5
+            * x
+            * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * np.power(x, 3))))
+        )
+
+    def backward(self, x):
+        cdf = 0.5 * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * np.power(x, 3))))
+        pdf = np.exp(-(x**2) / 2) / np.sqrt(2 * np.pi)
+        return cdf + x * pdf
