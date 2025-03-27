@@ -32,11 +32,12 @@ class Layer:
 
 # (fully connected layer)
 class DenseLayer(Layer):
-    def __init__(self, input_dim, output_dim, weight_initializer=None):
+    def __init__(self, input_dim, output_dim, activation, weight_initializer=None):
         super().__init__()
 
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.activation = activation
 
         if weight_initializer is None:
             self.parameters["weights"] = np.random.randn(
@@ -55,24 +56,24 @@ class DenseLayer(Layer):
     def forward(self, x):
         self.cache["input"] = x
 
-        # Y = X * W + b
-        output = np.dot(x, self.parameters["weights"]) + self.parameters["biases"]
+        z = np.dot(x, self.parameters["weights"]) + self.parameters["biases"]
+        self.cache["z"] = z
+
+        output = self.activation.forward(z)
 
         return output
 
     def backward(self, grad_output):
         x = self.cache["input"]
+        z = self.cache["z"]
         batch_size = x.shape[0]
 
-        # dL/dW = X^T * dL/dY
-        self.gradients["weights"] = np.dot(x.T, grad_output) / batch_size
+        dz = grad_output * self.activation.backward(z)
 
-        # dL/db = sum(dL/dY)
-        self.gradients["biases"] = (
-            np.sum(grad_output, axis=0, keepdims=True) / batch_size
-        )
+        self.gradients["weights"] = np.dot(x.T, dz) / batch_size
 
-        # dL/dX = dL/dY * W^T
-        grad_input = np.dot(grad_output, self.parameters["weights"].T)
+        self.gradients["biases"] = np.sum(dz, axis=0, keepdims=True) / batch_size
+
+        grad_input = np.dot(dz, self.parameters["weights"].T)
 
         return grad_input
