@@ -119,6 +119,229 @@ class NeuralNetwork:
         plt.title("Neural Network Structure, Weights, and Gradients")
         plt.show()
 
+    def train(
+        self,
+        X_train,
+        y_train,
+        X_val=None,
+        y_val=None,
+        batch_size=32,
+        learning_rate=0.01,
+        epochs=100,
+        l1_lambda=0,
+        l2_lambda=0,
+        momentum=0,
+        use_rmsnorm=False,
+        verbose=1,
+        early_stopping_patience=None,
+    ):
+        from tqdm import tqdm
+
+        history = {"train_loss": [], "val_loss": [], "val_accuracy": []}
+
+        if momentum > 0:
+            velocity = {}
+            for i, layer in enumerate(self.layers):
+                if hasattr(layer, "parameters") and "weights" in layer.parameters:
+                    velocity[i] = {
+                        "weights": np.zeros_like(layer.parameters["weights"]),
+                        "biases": np.zeros_like(layer.parameters["biases"]),
+                    }
+
+        if use_rmsnorm:
+            rmsnorm_cache = {}
+            for i, layer in enumerate(self.layers):
+                if hasattr(layer, "parameters") and "weights" in layer.parameters:
+                    rmsnorm_cache[i] = {
+                        "weights_rms": np.zeros_like(layer.parameters["weights"]),
+                        "biases_rms": np.zeros_like(layer.parameters["biases"]),
+                    }
+
+        best_val_loss = float("inf")
+        patience_counter = 0
+        best_weights = None
+
+        for epoch in range(epochs):
+            indices = np.random.permutation(len(X_train))
+            X_train_shuffled = X_train[indices]
+            y_train_shuffled = y_train[indices]
+
+            train_losses = []
+
+            batch_iterator = range(0, len(X_train), batch_size)
+            if verbose == 1:
+                batch_iterator = tqdm(batch_iterator, desc=f"Epoch {epoch+1}/{epochs}")
+
+            for i in batch_iterator:
+                X_batch = X_train_shuffled[i : i + batch_size]
+                y_batch = y_train_shuffled[i : i + batch_size]
+
+                y_pred = self.forward(X_batch)
+
+                loss = self.loss_function.forward(y_batch, y_pred)
+
+                reg_loss = 0
+
+                if l1_lambda > 0 or l2_lambda > 0:
+                    for layer in self.layers:
+                        if (
+                            hasattr(layer, "parameters")
+                            and "weights" in layer.parameters
+                        ):
+                            # L1
+                            if l1_lambda > 0:
+                                reg_loss += l1_lambda * np.sum(
+                                    np.abs(layer.parameters["weights"])
+                                )
+
+                            # L2
+                            if l2_lambda > 0:
+                                reg_loss += (l2_lambda / 2) * np.sum(
+                                    np.square(layer.parameters["weights"])
+                                )
+
+                total_loss = loss + reg_loss
+                train_losses.append(total_loss)
+
+                grad = self.loss_function.backward(y_batch, y_pred)
+                self.backward(grad)
+
+                for layer in self.layers:
+                    if hasattr(layer, "parameters") and "weights" in layer.parameters:
+                        if "weights" in layer.gradients:
+                            if l1_lambda > 0:
+                                l1_grad = l1_lambda * np.sign(
+                                    layer.parameters["weights"]
+                                )
+                                layer.gradients["weights"] += l1_grad
+
+                            if l2_lambda > 0:
+                                l2_grad = l2_lambda * layer.parameters["weights"]
+                                layer.gradients["weights"] += l2_grad
+
+                for j, layer in enumerate(self.layers):
+                    if hasattr(layer, "parameters") and "weights" in layer.parameters:
+                        if "weights" in layer.gradients:
+                            if momentum > 0 and j in velocity:
+                                velocity[j]["weights"] = (
+                                    momentum * velocity[j]["weights"]
+                                    - learning_rate * layer.gradients["weights"]
+                                )
+                                velocity[j]["biases"] = (
+                                    momentum * velocity[j]["biases"]
+                                    - learning_rate * layer.gradients["biases"]
+                                )
+
+                                layer.parameters["weights"] += velocity[j]["weights"]
+                                layer.parameters["biases"] += velocity[j]["biases"]
+                            elif use_rmsnorm and j in rmsnorm_cache:
+                                epsilon = 1e-8
+                                decay_rate = 0.999
+
+                                rmsnorm_cache[j][
+                                    "weights_rms"
+                                ] = decay_rate * rmsnorm_cache[j]["weights_rms"] + (
+                                    1 - decay_rate
+                                ) * np.square(
+                                    layer.gradients["weights"]
+                                )
+
+                                rmsnorm_cache[j][
+                                    "biases_rms"
+                                ] = decay_rate * rmsnorm_cache[j]["biases_rms"] + (
+                                    1 - decay_rate
+                                ) * np.square(
+                                    layer.gradients["biases"]
+                                )
+
+                                weights_update = (
+                                    learning_rate
+                                    * layer.gradients["weights"]
+                                    / (
+                                        np.sqrt(rmsnorm_cache[j]["weights_rms"])
+                                        + epsilon
+                                    )
+                                )
+                                biases_update = (
+                                    learning_rate
+                                    * layer.gradients["biases"]
+                                    / (
+                                        np.sqrt(rmsnorm_cache[j]["biases_rms"])
+                                        + epsilon
+                                    )
+                                )
+
+                                layer.parameters["weights"] -= weights_update
+                                layer.parameters["biases"] -= biases_update
+                            else:
+                                # Standard gradient descent
+                                layer.parameters["weights"] -= (
+                                    learning_rate * layer.gradients["weights"]
+                                )
+                                layer.parameters["biases"] -= (
+                                    learning_rate * layer.gradients["biases"]
+                                )
+
+            if X_val is not None and y_val is not None:
+                val_pred = self.forward(X_val)
+                val_loss = self.loss_function.forward(y_val, val_pred)
+
+                val_accuracy = None
+                if len(y_val.shape) > 1 and y_val.shape[1] > 1:
+                    val_pred_classes = np.argmax(val_pred, axis=1)
+                    val_true_classes = np.argmax(y_val, axis=1)
+                    val_accuracy = np.mean(val_pred_classes == val_true_classes)
+
+                history["val_loss"].append(val_loss)
+                if val_accuracy is not None:
+                    history["val_accuracy"].append(val_accuracy)
+
+                if early_stopping_patience is not None:
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        patience_counter = 0
+
+                        best_weights = {}
+                        for j, layer in enumerate(self.layers):
+                            if (
+                                hasattr(layer, "parameters")
+                                and "weights" in layer.parameters
+                            ):
+                                best_weights[j] = {
+                                    param_name: np.copy(param_value)
+                                    for param_name, param_value in layer.parameters.items()
+                                }
+                    else:
+                        patience_counter += 1
+
+                    if patience_counter >= early_stopping_patience:
+                        if verbose > 0:
+                            print(f"\nEarly stopping at epoch {epoch+1}")
+                        break
+
+            avg_train_loss = np.mean(train_losses)
+            history["train_loss"].append(avg_train_loss)
+
+            if verbose > 0:
+                status = f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}"
+                if X_val is not None and y_val is not None:
+                    status += f", Val Loss: {val_loss:.4f}"
+                    if val_accuracy is not None:
+                        status += f", Val Acc: {val_accuracy:.4f}"
+                print(status)
+
+        if early_stopping_patience is not None and best_weights:
+            for j, layer in enumerate(self.layers):
+                if (
+                    j in best_weights
+                    and hasattr(layer, "parameters")
+                    and "weights" in layer.parameters
+                ):
+                    for param_name, param_value in best_weights[j].items():
+                        layer.parameters[param_name] = param_value
+
+        return history
+
     def save(self, filename):
         with open(filename, "wb") as f:
             pickle.dump(self, f)
