@@ -40,6 +40,10 @@ class NeuralNetwork:
                 activation = activations.Tanh()
             elif activation_name == "softmax":
                 activation = activations.Softmax()
+            elif activation_name == "swish":
+                activation = activations.Swish()
+            elif activation_name == "gelu":
+                activation = activations.GELU()
             else:
                 raise ValueError(f"Unknown activation function: {activation_name}")
 
