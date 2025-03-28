@@ -119,6 +119,66 @@ class NeuralNetwork:
         plt.title("Neural Network Structure, Weights, and Gradients")
         plt.show()
 
+    def plot_weight_distribution(self, layers_to_plot=None):
+        if layers_to_plot is None:
+            layers_to_plot = range(len(self.layers))
+
+        num_layers = len(layers_to_plot)
+        fig, axes = plt.subplots(1, num_layers, figsize=(5 * num_layers, 5))
+
+        if num_layers == 1:
+            axes = [axes]
+
+        for i, layer_idx in enumerate(layers_to_plot):
+            if layer_idx >= len(self.layers):
+                print(f"Warning: Layer {layer_idx} does not exist. Skipping.")
+                continue
+
+            layer = self.layers[layer_idx]
+            if not hasattr(layer, "parameters") or "weights" not in layer.parameters:
+                print(f"Warning: Layer {layer_idx} has no weights. Skipping.")
+                continue
+
+            weights = layer.parameters["weights"].flatten()
+            axes[i].hist(weights, bins=50, alpha=0.7, color="blue")
+            axes[i].set_title(f"Layer {layer_idx+1} Weight Distribution")
+            axes[i].set_xlabel("Weight Value")
+            axes[i].set_ylabel("Frequency")
+            axes[i].grid(alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_gradient_distribution(self, layers_to_plot=None):
+        if layers_to_plot is None:
+            layers_to_plot = range(len(self.layers))
+
+        num_layers = len(layers_to_plot)
+        fig, axes = plt.subplots(1, num_layers, figsize=(5 * num_layers, 5))
+
+        if num_layers == 1:
+            axes = [axes]
+
+        for i, layer_idx in enumerate(layers_to_plot):
+            if layer_idx >= len(self.layers):
+                print(f"Warning: Layer {layer_idx} does not exist. Skipping.")
+                continue
+
+            layer = self.layers[layer_idx]
+            if not hasattr(layer, "gradients") or "weights" not in layer.gradients:
+                print(f"Warning: Layer {layer_idx} has no weight gradients. Skipping.")
+                continue
+
+            gradients = layer.gradients["weights"].flatten()
+            axes[i].hist(gradients, bins=50, alpha=0.7, color="red")
+            axes[i].set_title(f"Layer {layer_idx+1} Gradient Distribution")
+            axes[i].set_xlabel("Gradient Value")
+            axes[i].set_ylabel("Frequency")
+            axes[i].grid(alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
     def train(
         self,
         X_train,
